@@ -57,7 +57,7 @@ class CardGameScorer {
     document.getElementById("setupSection").classList.add("hidden")
     document.getElementById("gameInterface").classList.remove("hidden")
     this.renderCurrentScores()
-    this.renderRankingInputs()
+    this.renderRankingInputs() // có cả option Giết / Bị Giết
     this.renderBonusInputs()
     this.renderGameHistory()
     this.updateCurrentPointsDisplay()
@@ -75,8 +75,8 @@ class CardGameScorer {
 
   startGame() {
     for (let i = 0; i < 4; i++) {
-        const input = document.getElementById(`playerName_${i}`)
-        this.players[i] = (input?.value.trim()) || `Người ${i + 1}`
+      const input = document.getElementById(`playerName_${i}`)
+      this.players[i] = (input?.value.trim()) || `Người ${i + 1}`
     }
 
     this.pointX = Number.parseInt(document.getElementById("setupPointX").value) || 3
@@ -85,7 +85,7 @@ class CardGameScorer {
     this.isSetupComplete = true
     this.saveData()
     this.showGameInterface()
-    }
+  }
 
   backToSetup() {
     this.isSetupComplete = false
@@ -94,9 +94,9 @@ class CardGameScorer {
   }
 
   renderPlayerSetup() {
-  const container = document.getElementById("playerSetup")
-  container.innerHTML = this.players
-    .map((player, index) => `
+    const container = document.getElementById("playerSetup")
+    container.innerHTML = this.players
+      .map((player, index) => `
       <div class="flex items-center gap-3">
         <label for="playerName_${index}" class="w-20 text-sm font-medium text-gray-700">
           Người ${index + 1}:
@@ -106,9 +106,8 @@ class CardGameScorer {
                class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-sm">
       </div>
     `)
-    .join("")
-}
-
+      .join("")
+  }
 
   renderCurrentScores() {
     const container = document.getElementById("currentScores")
@@ -128,6 +127,7 @@ class CardGameScorer {
     })
   }
 
+  // ==== RANKING + GIẾT / BỊ GIẾT TRONG OPTION ====
   renderRankingInputs() {
     const container = document.getElementById("rankingInputs")
     container.innerHTML = ""
@@ -135,13 +135,15 @@ class CardGameScorer {
     this.players.forEach((player, index) => {
       container.innerHTML += `
         <div class="flex items-center gap-3">
-            <span class="w-16 text-sm font-medium">${player}:</span>
-            <select id="rank_${index}" class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
-                <option value="1">Nhất</option>
-                <option value="2">Nhì</option>
-                <option value="3">Ba</option>
-                <option value="4">Bét</option>
-            </select>
+          <span class="w-16 text-sm font-medium">${player}:</span>
+          <select id="rank_${index}" class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+            <option value="1">Nhất</option>
+            <option value="2">Nhì</option>
+            <option value="3">Ba</option>
+            <option value="4">Bét</option>
+            <option value="kill">Giết</option>
+            <option value="victim">Bị Giết</option>
+          </select>
         </div>
       `
     })
@@ -162,6 +164,7 @@ class CardGameScorer {
     })
   }
 
+  // ==== LỊCH SỬ ====
   renderGameHistory() {
     const container = document.getElementById("gameHistory")
 
@@ -175,9 +178,9 @@ class CardGameScorer {
       const gameDiv = document.createElement("div")
       gameDiv.className = "border border-gray-200 rounded-lg p-3"
 
-      const rankings = ["Nhất", "Nhì", "Ba", "Bét"]
+      const labelMap = { "1": "Nhất", "2": "Nhì", "3": "Ba", "4": "Bét", "kill": "Giết", "victim": "Bị Giết" }
       const rankingText = game.rankings
-        .map((rank, playerIndex) => `${this.players[playerIndex]}: ${rankings[rank - 1]}`)
+        .map((rv, playerIndex) => `${this.players[playerIndex]}: ${labelMap[String(rv)] || rv}`)
         .join(", ")
 
       const pointsText = game.finalPoints
@@ -187,9 +190,18 @@ class CardGameScorer {
         })
         .join(", ")
 
+      const killText = game.mode === "kill" && game.kill && game.kill.killerIndex >= 0 && game.kill.victimIndices?.length
+        ? `<div class="text-xs text-gray-600 mb-1">
+             Giết: <span class="font-medium">${this.players[game.kill.killerIndex]}</span>
+             → ${game.kill.victimIndices.map(v => `<span class="font-medium">${this.players[v]}</span>`).join(", ")}
+             (+2×${game.pointX} mỗi nạn nhân)
+           </div>`
+        : ""
+
       gameDiv.innerHTML = `
         <div class="text-sm text-gray-600 mb-1">Ván ${index + 1}</div>
         <div class="text-sm mb-1">${rankingText}</div>
+        ${killText}
         <div class="text-sm mb-2">${pointsText}</div>
         <button onclick="gameScorer.editGame(${index})" 
                 class="bg-warning text-white px-3 py-1 rounded text-xs hover:bg-yellow-600 transition-colors">
@@ -211,82 +223,126 @@ class CardGameScorer {
     this.renderGameHistory()
   }
 
+  // ==== GHI VÁN ====
   recordGame() {
     const pointX = this.pointX
     const pointY = this.pointY
 
-    // Get rankings
-    const rankings = []
+    // Đọc lựa chọn hạng / giết / bị giết
+    const rankingsRaw = []
     for (let i = 0; i < 4; i++) {
-      rankings[i] = Number.parseInt(document.getElementById(`rank_${i}`).value)
+      rankingsRaw[i] = (document.getElementById(`rank_${i}`).value || "1")
     }
 
-    // Check if rankings are valid (no duplicates)
-    const uniqueRanks = new Set(rankings)
-    if (uniqueRanks.size !== 4) {
-      alert("Vui lòng chọn thứ hạng khác nhau cho từng người!")
-      return
-    }
-
-    // Get bonus points
+    // Bonus
     const bonusPoints = []
     for (let i = 0; i < 4; i++) {
       bonusPoints[i] = Number.parseInt(document.getElementById(`bonus_${i}`).value) || 0
     }
 
-    // Calculate points based on rankings
-    const gamePoints = [0, 0, 0, 0]
-    rankings.forEach((rank, playerIndex) => {
-      switch (rank) {
-        case 1:
-          gamePoints[playerIndex] = pointX
-          break
-        case 2:
-          gamePoints[playerIndex] = pointY
-          break
-        case 3:
-          gamePoints[playerIndex] = -pointY
-          break
-        case 4:
-          gamePoints[playerIndex] = -pointX
-          break
-      }
-      gamePoints[playerIndex] += bonusPoints[playerIndex]
-    })
+    // Kiểm tra kill-mode
+    const killerIndices = rankingsRaw.map((v, i) => (v === "kill" ? i : -1)).filter(i => i >= 0)
+    const victimIndices = rankingsRaw.map((v, i) => (v === "victim" ? i : -1)).filter(i => i >= 0)
+    const killMode = victimIndices.length > 0
 
-    const total = gamePoints.reduce((sum, points) => sum + points, 0)
-    if (total !== 0) {
-      alert(
-        `Lỗi: Tổng điểm phải bằng 0! Hiện tại tổng là: ${total > 0 ? "+" : ""}${total}. Vui lòng kiểm tra lại điểm thắng thêm/thua thêm.`,
-      )
-      return
+    // Validate kill-mode
+    if (killMode) {
+      if (killerIndices.length !== 1) {
+        alert("Trong ván có 'Bị Giết' thì phải chọn đúng 1 người 'Giết'.")
+        return
+      }
+      if (victimIndices.includes(killerIndices[0])) {
+        alert("Một người không thể vừa 'Giết' vừa 'Bị Giết'.")
+        return
+      }
+    } else {
+      // Không có ai bị giết -> kiểm tra không trùng hạng 1..4
+      const numericRanks = rankingsRaw.map(v => parseInt(v, 10))
+      if (numericRanks.some(isNaN)) {
+        alert("Khi không có 'Bị Giết', tất cả phải chọn hạng 1/2/3/4.")
+        return
+      }
+      const unique = new Set(numericRanks)
+      if (unique.size !== 4) {
+        alert("Vui lòng chọn thứ hạng khác nhau (Nhất/Nhì/Ba/Bét) khi không có 'Bị Giết'.")
+        return
+      }
     }
 
-    // Record the game
+    // Tính điểm
+    const gamePoints = [0, 0, 0, 0]
+
+    if (killMode) {
+      // CASE XỬ LÝ RIÊNG: chỉ áp dụng chuyển tiền giết (không áp dụng điểm X/Y theo hạng)
+      const killer = killerIndices[0]
+
+      victimIndices.forEach(v => {
+        if (v === killer) return
+        gamePoints[killer] += 2 * pointX
+        gamePoints[v] -= 2 * pointX
+      })
+
+      // Cộng bonus
+      for (let i = 0; i < 4; i++) gamePoints[i] += bonusPoints[i]
+
+      // Không enforce tổng = 0 trong kill-mode
+    } else {
+      // MODE THƯỜNG: áp dụng điểm theo hạng 1/2/3/4 + bonus
+      const ranks = rankingsRaw.map(v => parseInt(v, 10))
+      ranks.forEach((rank, playerIndex) => {
+        switch (rank) {
+          case 1:
+            gamePoints[playerIndex] = pointX
+            break
+          case 2:
+            gamePoints[playerIndex] = pointY
+            break
+          case 3:
+            gamePoints[playerIndex] = -pointY
+            break
+          case 4:
+            gamePoints[playerIndex] = -pointX
+            break
+        }
+        gamePoints[playerIndex] += bonusPoints[playerIndex]
+      })
+
+      const total = gamePoints.reduce((s, p) => s + p, 0)
+      if (total !== 0) {
+        alert(
+          `Lỗi: Tổng điểm phải bằng 0! Hiện tại tổng là: ${total > 0 ? "+" : ""}${total}. Vui lòng kiểm tra lại điểm thắng thêm/thua thêm.`,
+        )
+        return
+      }
+    }
+
+    // Ghi ván
     const game = {
+      mode: killMode ? "kill" : "normal",
       pointX,
       pointY,
-      rankings: [...rankings],
+      rankings: [...rankingsRaw], // lưu đúng lựa chọn '1'|'2'|'3'|'4'|'kill'|'victim'
       bonusPoints: [...bonusPoints],
       finalPoints: [...gamePoints],
+      kill: killMode
+        ? { killerIndex: killerIndices[0], victimIndices: [...victimIndices] }
+        : { killerIndex: -1, victimIndices: [] },
     }
 
     if (this.editingGameIndex >= 0) {
-      // Update existing game
       const oldGame = this.gameHistory[this.editingGameIndex]
-      // Subtract old points
+      // Trừ điểm cũ
       oldGame.finalPoints.forEach((points, index) => {
         this.scores[index] -= points
       })
-      // Add new points
-      gamePoints.forEach((points, index) => {
+      // Cộng điểm mới
+      game.finalPoints.forEach((points, index) => {
         this.scores[index] += points
       })
       this.gameHistory[this.editingGameIndex] = game
       this.editingGameIndex = -1
     } else {
-      // Add new game
-      gamePoints.forEach((points, index) => {
+      game.finalPoints.forEach((points, index) => {
         this.scores[index] += points
       })
       this.gameHistory.push(game)
@@ -304,72 +360,67 @@ class CardGameScorer {
     document.getElementById("editModal").classList.add("hidden")
   }
 
+  // ==== EDIT MODAL ====
   editGame(index) {
     this.editingGameIndex = index
     const game = this.gameHistory[index]
 
-    // Populate edit modal
     const modalContent = document.getElementById("editModalContent")
+    const labelMap = { "1": "Nhất", "2": "Nhì", "3": "Ba", "4": "Bét", "kill": "Giết", "victim": "Bị Giết" }
+
     modalContent.innerHTML = `
-            <div class="grid grid-cols-2 gap-3 mb-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Điểm X</label>
-                    <input type="number" id="editPointX" value="${game.pointX}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Điểm Y</label>
-                    <input type="number" id="editPointY" value="${game.pointY}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                </div>
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Điểm X</label>
+          <input type="number" id="editPointX" value="${game.pointX}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Điểm Y</label>
+          <input type="number" id="editPointY" value="${game.pointY}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+        </div>
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">Thứ Hạng / Giết</label>
+        <div class="space-y-2">
+          ${this.players.map((player, i) => `
+            <div class="flex items-center gap-3">
+              <span class="w-16 text-sm font-medium">${player}:</span>
+              <select id="editRank_${i}" class="flex-1 px-3 py-2 border border-gray-300 rounded-md">
+                ${["1","2","3","4","kill","victim"].map(v => `
+                  <option value="${v}" ${String(game.rankings[i]) === v ? "selected" : ""}>${labelMap[v]}</option>
+                `).join("")}
+              </select>
             </div>
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Thứ Hạng</label>
-                <div class="space-y-2">
-                    ${this.players
-                      .map(
-                        (player, playerIndex) => `
-                        <div class="flex items-center gap-3">
-                            <span class="w-16 text-sm font-medium">${player}:</span>
-                            <select id="editRank_${playerIndex}" class="flex-1 px-3 py-2 border border-gray-300 rounded-md">
-                                <option value="1" ${game.rankings[playerIndex] === 1 ? "selected" : ""}>Nhất</option>
-                                <option value="2" ${game.rankings[playerIndex] === 2 ? "selected" : ""}>Nhì</option>
-                                <option value="3" ${game.rankings[playerIndex] === 3 ? "selected" : ""}>Ba</option>
-                                <option value="4" ${game.rankings[playerIndex] === 4 ? "selected" : ""}>Bét</option>
-                            </select>
-                        </div>
-                    `,
-                      )
-                      .join("")}
-                </div>
+          `).join("")}
+        </div>
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">Thắng Thêm / Thua Thêm</label>
+        <div class="space-y-2">
+          ${this.players.map((player, i) => `
+            <div class="flex items-center gap-3">
+              <span class="w-16 text-sm font-medium">${player}:</span>
+              <input type="number" id="editBonus_${i}" value="${game.bonusPoints[i] || 0}" 
+                     class="flex-1 px-3 py-2 border border-gray-300 rounded-md">
             </div>
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Thắng Thêm / Thua Thêm</label>
-                <div class="space-y-2">
-                    ${this.players
-                      .map(
-                        (player, playerIndex) => `
-                        <div class="flex items-center gap-3">
-                            <span class="w-16 text-sm font-medium">${player}:</span>
-                            <input type="number" id="editBonus_${playerIndex}" value="${game.bonusPoints[playerIndex]}" 
-                                   class="flex-1 px-3 py-2 border border-gray-300 rounded-md">
-                        </div>
-                    `,
-                      )
-                      .join("")}
-                </div>
-            </div>
-        `
+          `).join("")}
+        </div>
+      </div>
+    `
 
     document.getElementById("editModal").classList.remove("hidden")
     document.getElementById("editModal").classList.add("flex")
   }
 
   saveEdit() {
-    // Update form values from edit modal
+    // Cập nhật X/Y
     this.pointX = Number.parseInt(document.getElementById("editPointX").value) || this.pointX
     this.pointY = Number.parseInt(document.getElementById("editPointY").value) || this.pointY
 
+    // Copy chọn hạng/giết từ modal về form chính
     for (let i = 0; i < 4; i++) {
-      document.getElementById(`rank_${i}`).value = document.getElementById(`editRank_${i}`).value
+      const val = document.getElementById(`editRank_${i}`).value
+      document.getElementById(`rank_${i}`).value = val
       document.getElementById(`bonus_${i}`).value = document.getElementById(`editBonus_${i}`).value
     }
 
@@ -379,7 +430,7 @@ class CardGameScorer {
   deleteGame() {
     if (this.editingGameIndex >= 0) {
       const game = this.gameHistory[this.editingGameIndex]
-      // Subtract points from total
+      // Trừ điểm cũ
       game.finalPoints.forEach((points, index) => {
         this.scores[index] -= points
       })
@@ -396,10 +447,12 @@ class CardGameScorer {
   }
 
   resetForm() {
-    // Reset rankings to default
+    // Reset về 1..4 mặc định
     for (let i = 0; i < 4; i++) {
-      document.getElementById(`rank_${i}`).value = i + 1
-      document.getElementById(`bonus_${i}`).value = 0
+      const sel = document.getElementById(`rank_${i}`)
+      if (sel) sel.value = String(i + 1)
+      const bonus = document.getElementById(`bonus_${i}`)
+      if (bonus) bonus.value = 0
     }
   }
 
