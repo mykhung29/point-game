@@ -4,14 +4,97 @@ class CardGameScorer {
     this.scores = [0, 0, 0, 0]
     this.gameHistory = []
     this.editingGameIndex = -1
-    this.pointX = 3
-    this.pointY = 1
+    this.pointX = 10
+    this.pointY = 5
     this.isSetupComplete = false
 
     this.loadData()
     this.initializeUI()
     this.bindEvents()
+    this.initVoice()
+
   }
+
+  initVoice() {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition
+
+    if (!SpeechRecognition) {
+      alert("Trình duyệt không hỗ trợ giọng nói")
+      return
+    }
+
+    this.recognition = new SpeechRecognition()
+    this.recognition.lang = "vi-VN"
+    this.recognition.continuous = false
+    this.recognition.interimResults = false
+
+    this.recognition.onresult = (event) => {
+      const text = event.results[0][0].transcript.toLowerCase()
+      console.log("🎤 Nghe được:", text)
+      this.handleVoiceCommand(text)
+    }
+
+    this.recognition.onerror = (e) => {
+      console.error("Voice error:", e)
+      alert("Không nhận diện được giọng nói")
+    }
+  }
+
+  handleVoiceCommand(text) {
+  const rankMap = {
+    "nhất": 1,
+    "nhì": 2,
+    "nhi": 2,
+    "ba": 3,
+    "bét": 4,
+    "bet": 4
+  }
+
+  this.resetForm()
+
+  const assignedRanks = new Set()
+
+  this.players.forEach((player, index) => {
+    const name = player.toLowerCase()
+    if (!text.includes(name)) return
+
+    for (const key in rankMap) {
+      if (text.includes(key)) {
+        const rank = rankMap[key]
+        if (assignedRanks.has(rank)) return
+
+        document.getElementById(`rank_${index}`).value = rank
+        assignedRanks.add(rank)
+        break
+      }
+    }
+  })
+
+  // tự gán hạng còn thiếu
+  const missing = [1,2,3,4].filter(r => !assignedRanks.has(r))
+  let missIndex = 0
+
+  for (let i = 0; i < 4; i++) {
+    const el = document.getElementById(`rank_${i}`)
+    if (!el.value) el.value = missing[missIndex++]
+  }
+
+  this.showConfirmModal()
+}
+showConfirmModal() {
+  const list = document.getElementById("confirmList")
+  list.innerHTML = ""
+
+  this.players.forEach((player, index) => {
+    const rank = document.getElementById(`rank_${index}`).value
+    const li = document.createElement("li")
+    li.textContent = `${player}: hạng ${rank}`
+    list.appendChild(li)
+  })
+
+  document.getElementById("confirmModal").classList.remove("hidden")
+}
 
   loadData() {
     const savedData = localStorage.getItem("cardGameData")
@@ -488,6 +571,20 @@ class CardGameScorer {
 
     document.getElementById("startGameBtn").addEventListener("click", () => this.startGame())
     document.getElementById("backToSetupBtn").addEventListener("click", () => this.backToSetup())
+    document.getElementById("voiceBtn").addEventListener("click", () => {
+      this.recognition.start()
+    })
+
+  }
+
+  confirmRecord() {
+    document.getElementById("confirmModal").classList.add("hidden")
+    this.recordGame()
+  }
+
+
+  closeModal() {
+    document.getElementById("confirmModal").classList.add("hidden")
   }
 }
 
